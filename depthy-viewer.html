@@ -45,9 +45,23 @@
     height: auto;
     filter: drop-shadow(0 0 50px rgba(0, 0, 0, 0.5));
   }
+  /* Mobile fallback: static background image, no WebGL */
+  #mobile-bg {
+    display: none;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: url('Gemini_Generated_Image_trup7mtrup7mtrup.png') center center / cover no-repeat;
+    z-index: 0;
+  }
+  @media (max-width: 768px), (hover: none) {
+    canvas { display: none !important; }
+    #mobile-bg { display: block; }
+  }
 </style>
 </head>
 <body>
+<div id="mobile-bg"></div>
 <canvas id="viewer"></canvas>
 <canvas id="flares"></canvas>
 <div id="logo-wrap"></div>
@@ -55,6 +69,9 @@
 <script>
 // Copyright (c) 2014 Rafał Lindemann — shader from Depthy (MIT License)
 // Ported to standalone WebGL by this project.
+
+// ── Mobile detection — skip WebGL entirely on touch/small screens ──
+const isMobile = window.matchMedia('(max-width: 768px), (hover: none)').matches;
 
 const CONFIG = {
   colorImage: 'Gemini_Generated_Image_trup7mtrup7mtrup.png',
@@ -64,6 +81,70 @@ const CONFIG = {
   enlarge: 1.06,     // slight zoom to prevent edge bleed
   easeFactor: 0.92,  // mouse smoothing (higher = more lag, smoother)
 };
+
+// Logo inlining runs regardless of mobile/desktop
+let yellowGradient = null;
+fetch('Logo.svg')
+  .then(r => r.text())
+  .then(svgText => {
+    const wrap = document.getElementById('logo-wrap');
+    wrap.innerHTML = svgText;
+    const svg = wrap.querySelector('svg');
+    const defs = svg.querySelector('defs');
+    const style = svg.querySelector('style');
+
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+    grad.id = 'yellow-laser';
+    grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+    grad.setAttribute('x1', '0');
+    grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '750');
+    grad.setAttribute('y2', '0');
+    const stops = [
+      [0, '#f1d891', '1'], [0.35, '#ffe066', '1'],
+      [0.45, '#fffbe6', '1'], [0.55, '#fffbe6', '1'],
+      [0.65, '#ffe066', '1'], [1, '#f1d891', '1'],
+    ];
+    for (const [offset, color, opacity] of stops) {
+      const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      stop.setAttribute('offset', offset);
+      stop.setAttribute('stop-color', color);
+      stop.setAttribute('stop-opacity', opacity);
+      grad.appendChild(stop);
+    }
+    defs.appendChild(grad);
+    yellowGradient = grad;
+    style.textContent += '\n.logo-yellow { fill: url(#yellow-laser) !important; }';
+
+    const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    filter.id = 'yellow-glow';
+    filter.setAttribute('x', '-50%'); filter.setAttribute('y', '-50%');
+    filter.setAttribute('width', '200%'); filter.setAttribute('height', '200%');
+    filter.innerHTML = '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>' +
+      '<feColorMatrix in="blur" type="matrix" values="1 0 0 0 0.2  0 1 0 0 0.1  0 0 0 0 0  0 0 0 1 0" result="glow"/>' +
+      '<feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>';
+    defs.appendChild(filter);
+    style.textContent += '\n.logo-yellow { filter: url(#yellow-glow); }';
+
+    // Animate laser even on mobile (no WebGL needed)
+    function animateLaser() {
+      if (yellowGradient) {
+        const SVG_WIDTH = 750;
+        const LASER_PERIOD_MS = 2000;
+        const SHEEN_WIDTH = SVG_WIDTH / 6;
+        const t = (performance.now() % LASER_PERIOD_MS) / LASER_PERIOD_MS;
+        const pulse = (Math.sin(t * Math.PI * 2) + 1) / 2;
+        const sheenCenter = pulse * (SVG_WIDTH + SHEEN_WIDTH) - SHEEN_WIDTH / 2;
+        yellowGradient.setAttribute('x1', sheenCenter - SHEEN_WIDTH / 2);
+        yellowGradient.setAttribute('x2', sheenCenter + SHEEN_WIDTH / 2);
+      }
+      requestAnimationFrame(animateLaser);
+    }
+    if (isMobile) animateLaser();
+  });
+
+if (isMobile) { /* skip all WebGL setup */ } else {
+// ── Desktop WebGL path ──
 
 // Source image dimensions
 const IMG_W = 2730;
@@ -484,7 +565,7 @@ function drawFlares(offset) {
       const t = j / DISC_COUNT * 2;
       const dx = (halfW - lx) * t + halfW;
       const dy = (halfH - ly) * t + halfH;
-      const dia = (discs[i].diaBase + light.radius) * sizeScale;
+      const dia = Math.max(1, (discs[i].diaBase + light.radius) * sizeScale);
       const hue = discs[i].hue;
 
       // Ghost disc glow
@@ -515,7 +596,7 @@ function drawFlares(offset) {
 
         // Bright specular core
         const ease = (a, b, t) => (b - a) * (1 - Math.pow(t - 1, 2)) + a;
-        const spec = ease(dia / 5, dia / 2.5, dist);
+        const spec = Math.max(1, ease(dia / 5, dia / 2.5, dist));
         ctx.beginPath();
         const core = ctx.createRadialGradient(dx, dy, 0, dx, dy, spec);
         core.addColorStop(0.2 * sdist, 'rgba(255,255,255,' + coreIntensity + ')');
@@ -581,70 +662,6 @@ function render() {
   requestAnimationFrame(render);
 }
 
-// ── Logo inlining with laser yellow gradient ──
-
-let yellowGradient = null;
-
-fetch('Logo.svg')
-  .then(r => r.text())
-  .then(svgText => {
-    const wrap = document.getElementById('logo-wrap');
-    wrap.innerHTML = svgText;
-    const svg = wrap.querySelector('svg');
-
-    // Add a laser glow gradient for the yellow paths
-    const defs = svg.querySelector('defs');
-    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-    grad.id = 'yellow-laser';
-    // Use userSpaceOnUse so the gradient is global across all yellow paths
-    grad.setAttribute('gradientUnits', 'userSpaceOnUse');
-    grad.setAttribute('x1', '0');
-    grad.setAttribute('y1', '0');
-    grad.setAttribute('x2', '750');  // matches SVG viewBox width
-    grad.setAttribute('y2', '0');
-
-    // Warm gold -> hot white center -> warm gold
-    const stops = [
-      [0,    '#f1d891', '1'],
-      [0.35, '#ffe066', '1'],
-      [0.45, '#fffbe6', '1'],  // hot white sheen
-      [0.55, '#fffbe6', '1'],
-      [0.65, '#ffe066', '1'],
-      [1,    '#f1d891', '1'],
-    ];
-    for (const [offset, color, opacity] of stops) {
-      const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-      stop.setAttribute('offset', offset);
-      stop.setAttribute('stop-color', color);
-      stop.setAttribute('stop-opacity', opacity);
-      grad.appendChild(stop);
-    }
-    defs.appendChild(grad);
-    yellowGradient = grad;
-
-    // Override yellow class to use gradient
-    const style = svg.querySelector('style');
-    style.textContent += '\n.logo-yellow { fill: url(#yellow-laser) !important; }';
-
-    // Add glow filter for yellow elements
-    const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
-    filter.id = 'yellow-glow';
-    filter.setAttribute('x', '-50%');
-    filter.setAttribute('y', '-50%');
-    filter.setAttribute('width', '200%');
-    filter.setAttribute('height', '200%');
-    filter.innerHTML = `
-      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0.2  0 1 0 0 0.1  0 0 0 0 0  0 0 0 1 0" result="glow"/>
-      <feMerge>
-        <feMergeNode in="glow"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    `;
-    defs.appendChild(filter);
-    style.textContent += '\n.logo-yellow { filter: url(#yellow-glow); }';
-  });
-
 // ── Boot ──
 
 Promise.all([
@@ -655,6 +672,8 @@ Promise.all([
   resize();
   render();
 });
+
+} // end desktop-only block
 </script>
 </body>
 </html>
