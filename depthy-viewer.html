@@ -386,7 +386,7 @@ const flareDiscs = LIGHTS.map(light => {
     const j = i - DISC_COUNT / 2;
     discs.push({
       // Disc size: larger at extremes, smaller near center
-      dia: (Math.pow(Math.abs(10 * (j / DISC_COUNT)), 2) * 2) + 60 + (Math.random() * 60 - 30),
+      diaBase: (Math.pow(Math.abs(10 * (j / DISC_COUNT)), 2) * 2) + (Math.random() * 30 - 15),
       // Hue: vary slightly from the light's base hue
       hue: h + (Math.random() * 40 - 20),
     });
@@ -429,7 +429,8 @@ function drawFlares(offset) {
     // Distance from screen center, normalized [0,1] — controls overall intensity
     const distFromCenter = Math.sqrt((lx - halfW) ** 2 + (ly - halfH) ** 2);
     const dist = 1 - distFromCenter / diagHalf;
-    const scaleFactor = light.intensity * (w / 1920);
+    const screenScale = w / 1920;
+    const sizeScale = light.radius * light.intensity / 40 * screenScale;
 
     // Draw ghost disc chain along line from light through screen center
     for (let i = 0; i <= DISC_COUNT; i++) {
@@ -437,7 +438,7 @@ function drawFlares(offset) {
       const t = j / DISC_COUNT * 2;
       const dx = (halfW - lx) * t + halfW;
       const dy = (halfH - ly) * t + halfH;
-      const dia = discs[i].dia * scaleFactor;
+      const dia = (discs[i].diaBase + light.radius) * sizeScale;
       const hue = discs[i].hue;
 
       // Ghost disc glow
