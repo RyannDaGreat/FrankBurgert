@@ -121,7 +121,7 @@ const FRAG_SRC = `
       vec2 vpos = pos + vector[1] - j * vstep;
       float dpos = 0.5 + compression / 2.0 - j * dstep;
 
-      float depth = 1.0 - texture2D(displacementMap, vpos * vec2(1.0, -1.0) + vec2(0.0, 1.0)).r;
+      float depth = 1.0 - texture2D(displacementMap, vpos).r;
       depth = clamp(depth, dmin + 0.001, dmax);
 
       float confidence = step(dpos, depth);
