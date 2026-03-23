@@ -467,8 +467,10 @@ function computeScreenPos(nx, ny, depth, offset, scale, focus, aspect, enlarge, 
 
   // Invert cover-fit: vertex shader does texUV = (screenUV - 0.5) * coverScale + 0.5
   // So: screenUV = (texUV - 0.5) / coverScale + 0.5
-  const screenX = (imageX - 0.5) / coverScaleX + 0.5;
-  const screenY = (imageY - 0.5) / coverScaleY + 0.5;
+  const csX = coverScaleX || 1;
+  const csY = coverScaleY || 1;
+  const screenX = (imageX - 0.5) / csX + 0.5;
+  const screenY = (imageY - 0.5) / csY + 0.5;
 
   return { sx: screenX, sy: screenY };
 }
@@ -530,10 +532,11 @@ const flareDiscs = LIGHTS.map(light => {
 function drawFlares(offset) {
   const w = flareCanvas.width;
   const h = flareCanvas.height;
+  if (w < 1 || h < 1) return; // canvas not ready
   const aspect = w / h;
   const halfW = w / 2;
   const halfH = h / 2;
-  const diagHalf = Math.sqrt(halfW * halfW + halfH * halfH);
+  const diagHalf = Math.sqrt(halfW * halfW + halfH * halfH) || 1;
 
   ctx.clearRect(0, 0, w, h);
   ctx.globalCompositeOperation = 'screen';
@@ -553,11 +556,14 @@ function drawFlares(offset) {
     const lx = screen.sx * w;
     const ly = screen.sy * h;
 
+    // Skip this light if position is NaN (can happen during resize)
+    if (!isFinite(lx) || !isFinite(ly)) continue;
+
     // Distance from screen center, normalized [0,1] — controls overall intensity
     const distFromCenter = Math.sqrt((lx - halfW) ** 2 + (ly - halfH) ** 2);
-    const dist = 1 - distFromCenter / diagHalf;
+    const dist = Math.max(0, Math.min(1, 1 - distFromCenter / diagHalf));
     const screenScale = w / 1920;
-    const sizeScale = light.radius * light.intensity / 40 * screenScale;
+    const sizeScale = Math.max(0.01, light.radius * light.intensity / 40 * screenScale);
 
     // Draw ghost disc chain along line from light through screen center
     for (let i = 0; i <= DISC_COUNT; i++) {
