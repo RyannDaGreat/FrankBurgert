@@ -287,40 +287,64 @@ window.addEventListener('resize', resize);
 // ── Lens flare rendering ──
 
 /**
- * Pure function, general. Compute parallax displacement for a point at a given
- * depth, matching the Depthy shader's displacement math.
+ * Pure function, general. Compute the screen-space position of a source texel
+ * after the Depthy parallax shader displaces it, by inverting the shader's
+ * ray-march lookup.
+ *
+ * The shader maps screen UV -> source UV by: sourceUV = screenUV + displacement.
+ * So the inverse (source -> screen) is: screenUV = sourceUV - displacement.
+ * Displacement for a point at depth d = offset * (d - focus) * scale2.
  *
  * Args:
- *   nx (number): Normalized x position [0,1]
- *   ny (number): Normalized y position [0,1]
- *   depth (number): Depth value [0,1] (white=1=near in depth map)
- *   offset (object): {x, y} current eased parallax offset
- *   scale (number): Displacement scale
+ *   nx (number): Source texel x in [0,1]
+ *   ny (number): Source texel y in [0,1]
+ *   depth (number): Depth map value [0,1] (white=1=near)
+ *   offset (object): {x, y} current eased parallax offset [-1,1]
+ *   scale (number): Displacement scale (CONFIG.scale)
  *   focus (number): Focus depth [0,1]
- *   aspect (number): Canvas width/height
+ *   aspect (number): Canvas width / height
+ *   enlarge (number): Enlarge factor (CONFIG.enlarge)
  *
  * Returns:
- *   {dx, dy}: Pixel displacement to apply
+ *   {sx, sy}: Screen position in [0,1] UV space
  *
  * Examples:
- *   >>> // At focus depth with no offset, displacement is zero
- *   >>> computeParallaxShift(0.5, 0.5, 0.5, {x:0,y:0}, 0.04, 0.5, 16/9)
- *   {dx: 0, dy: 0}
+ *   >>> // At zero offset, screen pos equals source pos (adjusted for enlarge)
+ *   >>> computeScreenPos(0.5, 0.5, 0.5, {x:0,y:0}, 0.04, 0.5, 16/9, 1.06)
+ *   {sx: 0.5, sy: 0.5}
  */
-function computeParallaxShift(nx, ny, depth, offset, scale, focus, aspect) {
+function computeScreenPos(nx, ny, depth, offset, scale, focus, aspect, enlarge) {
   const UPSCALE = 1.5;
-  const sx = scale * Math.min(1, 1 / aspect) * UPSCALE;
-  const sy = scale * Math.min(1, aspect) * -UPSCALE;
-
-  // Depth in shader space: inverted, compressed
   const COMPRESSION = 0.8;
-  const shaderDepth = 1.0 - depth; // shader does 1 - texture.r
-  const depthFactor = shaderDepth - focus;
 
-  const dx = offset.x * depthFactor * sx;
-  const dy = offset.y * depthFactor * sy;
+  // Match shader's scale2 computation exactly
+  const sx = scale * Math.min(1, 1 / aspect) * 1.0 * UPSCALE;
+  const sy = scale * Math.min(1, aspect) * -1.0 * UPSCALE;
 
-  return { dx, dy };
+  // Shader depth: inverted from the depth map texture
+  const shaderDepth = 1.0 - depth;
+  // Clamp to compressed range like shader does
+  const dmin = (1.0 - COMPRESSION) / 2.0;
+  const dmax = (1.0 + COMPRESSION) / 2.0;
+  const clampedDepth = Math.max(dmin + 0.001, Math.min(dmax, shaderDepth));
+
+  // The shader's displacement for this depth:
+  // At step j where dpos matches depth, the sampled position is:
+  //   vpos = screenPos + vector[1] - j * vstep + correction
+  // where vector[1] = (0.5 - focus) * offset * scale2 + offset/2 * scale2
+  // and the displacement at depth d is approximately: offset * (d - focus) * scale2
+  // So: sourceUV = screenUV + offset * (clampedDepth - focus) * scale2
+  // Invert: screenUV = sourceUV - offset * (clampedDepth - focus) * scale2
+  const depthFactor = clampedDepth - focus;
+  const dispX = offset.x * depthFactor * sx;
+  const dispY = offset.y * depthFactor * sy;
+
+  // Invert the enlarge transform: pos = (uv - 0.5) / enlarge + 0.5
+  // So: uv = (pos - 0.5) * enlarge + 0.5
+  const screenX = ((nx - dispX) - 0.5) * enlarge + 0.5;
+  const screenY = ((ny - dispY) - 0.5) * enlarge + 0.5;
+
+  return { sx: screenX, sy: screenY };
 }
 
 /**
@@ -394,13 +418,13 @@ function drawFlares(offset) {
     const [lr, lg, lb] = light.color;
     const { h: baseHue } = rgbToHsl(lr, lg, lb);
 
-    const shift = computeParallaxShift(
+    const screen = computeScreenPos(
       light.nx, light.ny, light.depth,
-      offset, CONFIG.scale, CONFIG.focus, aspect
+      offset, CONFIG.scale, CONFIG.focus, aspect, CONFIG.enlarge
     );
 
-    const lx = light.nx * w + shift.dx * w;
-    const ly = light.ny * h + shift.dy * h;
+    const lx = screen.sx * w;
+    const ly = screen.sy * h;
 
     // Distance from screen center, normalized [0,1] — controls overall intensity
     const distFromCenter = Math.sqrt((lx - halfW) ** 2 + (ly - halfH) ** 2);
