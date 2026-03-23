@@ -40,17 +40,17 @@
     padding-top: 2vh;
     z-index: 10;
   }
-  #logo-wrap img {
+  #logo-wrap svg, #logo-wrap img {
     width: 100%;
     height: auto;
-    filter: drop-shadow(0 0 50px rgba(255, 255, 255, 0.5));
+    filter: drop-shadow(0 0 50px rgba(0, 0, 0, 0.5));
   }
 </style>
 </head>
 <body>
 <canvas id="viewer"></canvas>
 <canvas id="flares"></canvas>
-<div id="logo-wrap"><img src="Logo.svg" alt="FiberSatCo"></div>
+<div id="logo-wrap"></div>
 
 <script>
 // Copyright (c) 2014 Rafał Lindemann — shader from Depthy (MIT License)
@@ -109,9 +109,12 @@ const ctx = flareCanvas.getContext('2d');
 
 const VERT_SRC = `
   attribute vec2 aPosition;
+  uniform vec2 coverScale;
   varying vec2 vTextureCoord;
   void main() {
-    vTextureCoord = vec2(aPosition.x, -aPosition.y) * 0.5 + 0.5;
+    vec2 uv = vec2(aPosition.x, -aPosition.y) * 0.5 + 0.5;
+    // Apply cover-fit: scale UVs so image covers viewport without distortion
+    vTextureCoord = (uv - 0.5) * coverScale + 0.5;
     gl_Position = vec4(aPosition, 0.0, 1.0);
   }
 `;
@@ -230,6 +233,7 @@ const uScale      = gl.getUniformLocation(program, 'scale');
 const uOffset     = gl.getUniformLocation(program, 'offset');
 const uFocus      = gl.getUniformLocation(program, 'focus');
 const uEnlarge    = gl.getUniformLocation(program, 'enlarge');
+const uCoverScale = gl.getUniformLocation(program, 'coverScale');
 const uSampler    = gl.getUniformLocation(program, 'uSampler');
 const uDepthMap   = gl.getUniformLocation(program, 'displacementMap');
 
@@ -290,6 +294,9 @@ if (window.DeviceOrientationEvent) {
 
 // ── Resize ──
 
+let imgAspect = IMG_W / IMG_H; // updated after image loads
+let coverScaleXY = { x: 1, y: 1 };
+
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width  = canvas.clientWidth  * dpr;
@@ -298,6 +305,20 @@ function resize() {
   flareCanvas.height = canvas.height;
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.uniform4fv(uDimensions, [canvas.width, canvas.height, 0, 0]);
+
+  // Cover-fit: scale UVs so the image covers the viewport without distortion
+  const canvasAspect = canvas.width / canvas.height;
+  let scaleX = 1, scaleY = 1;
+  if (canvasAspect > imgAspect) {
+    // Canvas is wider than image — crop top/bottom
+    scaleY = imgAspect / canvasAspect;
+  } else {
+    // Canvas is taller than image — crop left/right
+    scaleX = canvasAspect / imgAspect;
+  }
+  coverScaleXY.x = scaleX;
+  coverScaleXY.y = scaleY;
+  gl.uniform2f(uCoverScale, scaleX, scaleY);
 }
 window.addEventListener('resize', resize);
 
@@ -321,16 +342,18 @@ window.addEventListener('resize', resize);
  *   focus (number): Focus depth [0,1]
  *   aspect (number): Canvas width / height
  *   enlarge (number): Enlarge factor (CONFIG.enlarge)
+ *   coverScaleX (number): Cover-fit X scale factor
+ *   coverScaleY (number): Cover-fit Y scale factor
  *
  * Returns:
- *   {sx, sy}: Screen position in [0,1] UV space
+ *   {sx, sy}: Screen position in [0,1] viewport space
  *
  * Examples:
- *   >>> // At zero offset, screen pos equals source pos (adjusted for enlarge)
- *   >>> computeScreenPos(0.5, 0.5, 0.5, {x:0,y:0}, 0.04, 0.5, 16/9, 1.06)
+ *   >>> // At zero offset, screen pos equals source pos (adjusted for enlarge + cover)
+ *   >>> computeScreenPos(0.5, 0.5, 0.5, {x:0,y:0}, 0.04, 0.5, 16/9, 1.06, 1, 1)
  *   {sx: 0.5, sy: 0.5}
  */
-function computeScreenPos(nx, ny, depth, offset, scale, focus, aspect, enlarge) {
+function computeScreenPos(nx, ny, depth, offset, scale, focus, aspect, enlarge, coverScaleX, coverScaleY) {
   const UPSCALE = 1.5;
   const COMPRESSION = 0.8;
 
@@ -358,8 +381,13 @@ function computeScreenPos(nx, ny, depth, offset, scale, focus, aspect, enlarge) 
 
   // Invert the enlarge transform: pos = (uv - 0.5) / enlarge + 0.5
   // So: uv = (pos - 0.5) * enlarge + 0.5
-  const screenX = ((nx - dispX) - 0.5) * enlarge + 0.5;
-  const screenY = ((ny - dispY) - 0.5) * enlarge + 0.5;
+  const imageX = ((nx - dispX) - 0.5) * enlarge + 0.5;
+  const imageY = ((ny - dispY) - 0.5) * enlarge + 0.5;
+
+  // Invert cover-fit: vertex shader does texUV = (screenUV - 0.5) * coverScale + 0.5
+  // So: screenUV = (texUV - 0.5) / coverScale + 0.5
+  const screenX = (imageX - 0.5) / coverScaleX + 0.5;
+  const screenY = (imageY - 0.5) / coverScaleY + 0.5;
 
   return { sx: screenX, sy: screenY };
 }
@@ -437,7 +465,8 @@ function drawFlares(offset) {
 
     const screen = computeScreenPos(
       light.nx, light.ny, light.depth,
-      offset, CONFIG.scale, CONFIG.focus, aspect, CONFIG.enlarge
+      offset, CONFIG.scale, CONFIG.focus, aspect, CONFIG.enlarge,
+      coverScaleXY.x, coverScaleXY.y
     );
 
     const lx = screen.sx * w;
@@ -471,7 +500,7 @@ function drawFlares(offset) {
 
       // First disc (at the light source) gets special treatment
       if (i === 0) {
-        const sdist = 1 - Math.pow(Math.abs(dist - 1), 3);
+        const sdist = Math.max(0, 1 - Math.pow(Math.abs(dist - 1), 3));
         const coreIntensity = sdist * light.intensity;
 
         // Outer bloom
@@ -535,15 +564,87 @@ function render() {
 
   drawFlares(easedOffset);
 
+  // Animate the yellow laser sheen gradient based on mouse position
+  if (yellowGradient) {
+    // Map eased offset [-1,1] to gradient position [0%,100%]
+    const gradX = (easedOffset.x + 1) * 50;
+    yellowGradient.setAttribute('x1', (gradX - 30) + '%');
+    yellowGradient.setAttribute('x2', (gradX + 70) + '%');
+  }
+
   requestAnimationFrame(render);
 }
+
+// ── Logo inlining with laser yellow gradient ──
+
+let yellowGradient = null;
+
+fetch('Logo.svg')
+  .then(r => r.text())
+  .then(svgText => {
+    const wrap = document.getElementById('logo-wrap');
+    wrap.innerHTML = svgText;
+    const svg = wrap.querySelector('svg');
+
+    // Add a laser glow gradient for the yellow paths
+    const defs = svg.querySelector('defs');
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+    grad.id = 'yellow-laser';
+    grad.setAttribute('x1', '0%');
+    grad.setAttribute('y1', '0%');
+    grad.setAttribute('x2', '100%');
+    grad.setAttribute('y2', '0%');
+    grad.setAttribute('gradientUnits', 'objectBoundingBox');
+
+    // Warm gold -> hot white center -> warm gold
+    const stops = [
+      [0,    '#f1d891', '1'],
+      [0.35, '#ffe066', '1'],
+      [0.45, '#fffbe6', '1'],  // hot white sheen
+      [0.55, '#fffbe6', '1'],
+      [0.65, '#ffe066', '1'],
+      [1,    '#f1d891', '1'],
+    ];
+    for (const [offset, color, opacity] of stops) {
+      const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      stop.setAttribute('offset', offset);
+      stop.setAttribute('stop-color', color);
+      stop.setAttribute('stop-opacity', opacity);
+      grad.appendChild(stop);
+    }
+    defs.appendChild(grad);
+    yellowGradient = grad;
+
+    // Override yellow class to use gradient
+    const style = svg.querySelector('style');
+    style.textContent += '\n.logo-yellow { fill: url(#yellow-laser) !important; }';
+
+    // Add glow filter for yellow elements
+    const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    filter.id = 'yellow-glow';
+    filter.setAttribute('x', '-50%');
+    filter.setAttribute('y', '-50%');
+    filter.setAttribute('width', '200%');
+    filter.setAttribute('height', '200%');
+    filter.innerHTML = `
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0.2  0 1 0 0 0.1  0 0 0 0 0  0 0 0 1 0" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    `;
+    defs.appendChild(filter);
+    style.textContent += '\n.logo-yellow { filter: url(#yellow-glow); }';
+  });
 
 // ── Boot ──
 
 Promise.all([
   loadTexture(CONFIG.colorImage, 0),
   loadTexture(CONFIG.depthImage, 1),
-]).then(() => {
+]).then(([colorInfo]) => {
+  imgAspect = colorInfo.width / colorInfo.height;
   resize();
   render();
 });
