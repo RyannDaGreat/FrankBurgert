@@ -29,11 +29,28 @@
   #flares {
     pointer-events: none;
   }
+  #logo-wrap {
+    position: absolute;
+    top: 0;
+    left: 25%;
+    width: 50%;
+    pointer-events: none;
+    display: flex;
+    justify-content: center;
+    padding-top: 2vh;
+    z-index: 10;
+  }
+  #logo-wrap img {
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 0 50px rgba(255, 255, 255, 0.5));
+  }
 </style>
 </head>
 <body>
 <canvas id="viewer"></canvas>
 <canvas id="flares"></canvas>
+<div id="logo-wrap"><img src="Logo.svg" alt="FiberSatCo"></div>
 
 <script>
 // Copyright (c) 2014 Rafał Lindemann — shader from Depthy (MIT License)
