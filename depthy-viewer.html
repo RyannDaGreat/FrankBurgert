@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<!--
+  Depth Parallax Viewer — ported from Depthy by Rafał Lindemann (MIT License)
+  https://github.com/panrafal/depthy
+
+  Settings: expand (cover), dramatic (2x scale), middle focus (0.5)
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FiberSatCo — Depth Viewer</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+    cursor: crosshair;
+  }
+</style>
+</head>
+<body>
+<canvas id="viewer"></canvas>
+
+<script>
+// Copyright (c) 2014 Rafał Lindemann — shader from Depthy (MIT License)
+// Ported to standalone WebGL by this project.
+
+const CONFIG = {
+  colorImage: 'Gemini_Generated_Image_trup7mtrup7mtrup.png',
+  depthImage: 'depth.png',
+  scale: 0.04,       // "dramatic" = 0.02 * 2.0
+  focus: 0.5,        // "middle"
+  enlarge: 1.06,     // slight zoom to prevent edge bleed
+  easeFactor: 0.92,  // mouse smoothing (higher = more lag, smoother)
+};
+
+const canvas = document.getElementById('viewer');
+const gl = canvas.getContext('webgl');
+if (!gl) {
+  document.body.textContent = 'WebGL not supported';
+  throw new Error('No WebGL');
+}
+
+// ── Shaders ──
+
+const VERT_SRC = `
+  attribute vec2 aPosition;
+  varying vec2 vTextureCoord;
+  void main() {
+    vTextureCoord = aPosition * 0.5 + 0.5;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+  }
+`;
+
+// Depthy's parallax occlusion mapping shader (quality ~4, METHOD 1)
+const FRAG_SRC = `
+  // Copyright (c) 2014 Rafał Lindemann. http://panrafal.github.com/depthy
+  precision mediump float;
+
+  varying vec2 vTextureCoord;
+  uniform sampler2D uSampler;
+  uniform sampler2D displacementMap;
+  uniform vec4 dimensions;
+  uniform float scale;
+  uniform vec2 offset;
+  uniform float focus;
+  uniform float enlarge;
+
+  #define METHOD 1
+  #define CORRECT
+  #define UPSCALE 1.5
+  #define ANTIALIAS 2
+  #define AA_TRIGGER 0.8
+  #define AA_POWER 1.0
+  #define AA_MAXITER 8.0
+  #define MAXSTEPS 16.0
+  #define CONFIDENCE_MAX 2.5
+  #define COMPRESSION 0.8
+
+  float steps = MAXSTEPS;
+  float maskPower = steps * 1.0;
+  float correctPower = 1.0;
+
+  const float compression = COMPRESSION;
+  const float dmin = (1.0 - compression) / 2.0;
+  const float dmax = (1.0 + compression) / 2.0;
+  const float vectorCutoff = 0.0 + dmin - 0.0001;
+
+  void main(void) {
+    float aspect = dimensions.x / dimensions.y;
+    vec2 scale2 = vec2(scale * min(1.0, 1.0 / aspect), scale * min(1.0, aspect))
+                  * vec2(1.0, -1.0) * vec2(UPSCALE);
+
+    mat2 baseVector = mat2(
+      vec2((0.5 - focus) * offset - offset / 2.0) * scale2,
+      vec2((0.5 - focus) * offset + offset / 2.0) * scale2
+    );
+
+    vec2 pos = (vTextureCoord - vec2(0.5)) / vec2(enlarge) + vec2(0.5);
+    mat2 vector = baseVector;
+
+    float dstep = compression / (steps - 1.0);
+    vec2 vstep = (vector[1] - vector[0]) / vec2(steps - 1.0);
+
+    vec2 posSum = vec2(0.0);
+    float confidenceSum = 0.0;
+
+    // Antialias index
+    float j = 0.0;
+
+    for (float i = 0.0; i < MAXSTEPS; ++i) {
+      vec2 vpos = pos + vector[1] - j * vstep;
+      float dpos = 0.5 + compression / 2.0 - j * dstep;
+
+      float depth = 1.0 - texture2D(displacementMap, vpos * vec2(1.0, -1.0) + vec2(0.0, 1.0)).r;
+      depth = clamp(depth, dmin + 0.001, dmax);
+
+      float confidence = step(dpos, depth);
+
+      confidence *= step(vectorCutoff, dpos);
+      confidence *= step(confidenceSum, CONFIDENCE_MAX);
+
+      // AA method 2: go back halfstep on hit, go forward fullstep
+      j += 1.0 + step(AA_TRIGGER, confidence) * step(i, j) * -1.5;
+
+      posSum += (vpos + vec2((depth - dpos) / (dstep * correctPower)) * vstep) * confidence;
+      confidenceSum += confidence;
+    }
+
+    gl_FragColor = texture2D(uSampler, posSum / confidenceSum);
+  }
+`;
+
+// ── WebGL setup ──
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    throw new Error('Shader compile: ' + gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+const program = gl.createProgram();
+gl.attachShader(program, compileShader(gl.VERTEX_SHADER, VERT_SRC));
+gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, FRAG_SRC));
+gl.linkProgram(program);
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+  throw new Error('Program link: ' + gl.getProgramInfoLog(program));
+}
+gl.useProgram(program);
+
+// Fullscreen quad
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const aPos = gl.getAttribLocation(program, 'aPosition');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+// Uniforms
+const uDimensions = gl.getUniformLocation(program, 'dimensions');
+const uScale      = gl.getUniformLocation(program, 'scale');
+const uOffset     = gl.getUniformLocation(program, 'offset');
+const uFocus      = gl.getUniformLocation(program, 'focus');
+const uEnlarge    = gl.getUniformLocation(program, 'enlarge');
+const uSampler    = gl.getUniformLocation(program, 'uSampler');
+const uDepthMap   = gl.getUniformLocation(program, 'displacementMap');
+
+gl.uniform1f(uScale, CONFIG.scale);
+gl.uniform1f(uFocus, CONFIG.focus);
+gl.uniform1f(uEnlarge, CONFIG.enlarge);
+gl.uniform1i(uSampler, 0);
+gl.uniform1i(uDepthMap, 1);
+
+// ── Texture loading ──
+
+function loadTexture(url, unit) {
+  return new Promise((resolve) => {
+    const tex = gl.createTexture();
+    const img = new Image();
+    img.onload = () => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      resolve({ tex, width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = url;
+  });
+}
+
+// ── Mouse tracking ──
+
+let targetOffset = { x: 0, y: 0 };
+let easedOffset  = { x: 0, y: 0 };
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width  * 2 - 1;
+  const y = (e.clientY - rect.top)  / rect.height * 2 - 1;
+  targetOffset.x = -x;
+  targetOffset.y = -y;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  targetOffset.x = 0;
+  targetOffset.y = 0;
+});
+
+// ── Gyroscope / device orientation for mobile ──
+
+if (window.DeviceOrientationEvent) {
+  window.addEventListener('deviceorientation', (e) => {
+    if (e.gamma === null) return;
+    const TILT_RANGE_DEG = 20;
+    targetOffset.x = -Math.max(-1, Math.min(1, e.gamma / TILT_RANGE_DEG));
+    targetOffset.y = -Math.max(-1, Math.min(1, (e.beta - 45) / TILT_RANGE_DEG));
+  });
+}
+
+// ── Resize ──
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.uniform4fv(uDimensions, [canvas.width, canvas.height, 0, 0]);
+}
+window.addEventListener('resize', resize);
+
+// ── Render loop ──
+
+function render() {
+  const ease = CONFIG.easeFactor;
+  easedOffset.x = easedOffset.x * ease + targetOffset.x * (1 - ease);
+  easedOffset.y = easedOffset.y * ease + targetOffset.y * (1 - ease);
+
+  gl.uniform2f(uOffset, easedOffset.x, easedOffset.y);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  requestAnimationFrame(render);
+}
+
+// ── Boot ──
+
+Promise.all([
+  loadTexture(CONFIG.colorImage, 0),
+  loadTexture(CONFIG.depthImage, 1),
+]).then(() => {
+  resize();
+  render();
+});
+</script>
+</body>
+</html>
