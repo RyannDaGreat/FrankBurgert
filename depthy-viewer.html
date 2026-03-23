@@ -566,10 +566,14 @@ function render() {
 
   // Animate the yellow laser sheen gradient based on mouse position
   if (yellowGradient) {
-    // Map eased offset [-1,1] to gradient position [0%,100%]
-    const gradX = (easedOffset.x + 1) * 50;
-    yellowGradient.setAttribute('x1', (gradX - 30) + '%');
-    yellowGradient.setAttribute('x2', (gradX + 70) + '%');
+    // Sinusoidal pulse left-to-right, 2-second period
+    const LASER_PERIOD_MS = 2000;
+    const t = (performance.now() % LASER_PERIOD_MS) / LASER_PERIOD_MS;
+    const pulse = (Math.sin(t * Math.PI * 2) + 1) / 2; // [0,1] smooth oscillation
+    // Sheen sweeps from -30% to 130% so the highlight travels fully across
+    const sheenCenter = pulse * 160 - 30;
+    yellowGradient.setAttribute('x1', (sheenCenter - 40) + '%');
+    yellowGradient.setAttribute('x2', (sheenCenter + 40) + '%');
   }
 
   requestAnimationFrame(render);
