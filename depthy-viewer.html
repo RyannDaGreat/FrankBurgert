@@ -21,14 +21,19 @@
     background: var(--bg);
   }
   canvas {
-    display: block;
+    position: absolute;
+    top: 0; left: 0;
     width: 100%; height: 100%;
     cursor: crosshair;
+  }
+  #flares {
+    pointer-events: none;
   }
 </style>
 </head>
 <body>
 <canvas id="viewer"></canvas>
+<canvas id="flares"></canvas>
 
 <script>
 // Copyright (c) 2014 Rafał Lindemann — shader from Depthy (MIT License)
@@ -43,12 +48,45 @@ const CONFIG = {
   easeFactor: 0.92,  // mouse smoothing (higher = more lag, smoother)
 };
 
+// Source image dimensions
+const IMG_W = 2730;
+const IMG_H = 1536;
+
+// ── Light positions ──
+// Each light: { x, y } in normalized [0,1] image coords, depth from depth map,
+// color as CSS string, radius of flare in px, intensity [0,1]
+const LIGHTS = [
+  // Green beacon on top of left dish
+  { nx: 0.1953, ny: 0.1456, depth: 0.44, color: [180, 255, 245], radius: 60, intensity: 0.7 },
+  // Teal lights along left fence
+  { nx: 0.1198, ny: 0.5826, depth: 0.45, color: [10, 244, 241],  radius: 40, intensity: 0.55 },
+  { nx: 0.1449, ny: 0.5797, depth: 0.46, color: [28, 242, 232],  radius: 35, intensity: 0.45 },
+  { nx: 0.1782, ny: 0.5911, depth: 0.47, color: [3, 229, 227],   radius: 50, intensity: 0.6 },
+  // Mid-left fence teal
+  { nx: 0.2749, ny: 0.5484, depth: 0.44, color: [6, 217, 202],   radius: 45, intensity: 0.5 },
+  // White pole lights
+  { nx: 0.3382, ny: 0.5315, depth: 0.35, color: [252, 255, 246], radius: 35, intensity: 0.45 },
+  { nx: 0.4134, ny: 0.5710, depth: 0.44, color: [252, 253, 248], radius: 30, intensity: 0.4 },
+  // Small white light upper left fence
+  { nx: 0.1609, ny: 0.5136, depth: 0.73, color: [249, 249, 247], radius: 25, intensity: 0.35 },
+  // Green beacon top of right dish
+  { nx: 0.4528, ny: 0.3343, depth: 1.00, color: [173, 231, 243], radius: 50, intensity: 0.6 },
+  // Orange warning light between dishes
+  { nx: 0.5508, ny: 0.3659, depth: 0.61, color: [255, 220, 80],  radius: 40, intensity: 0.55 },
+  // Right teal lights
+  { nx: 0.8989, ny: 0.5934, depth: 1.00, color: [180, 255, 255], radius: 40, intensity: 0.5 },
+  { nx: 0.9504, ny: 0.6303, depth: 1.00, color: [170, 255, 255], radius: 35, intensity: 0.45 },
+];
+
 const canvas = document.getElementById('viewer');
 const gl = canvas.getContext('webgl');
 if (!gl) {
   document.body.textContent = 'WebGL not supported';
   throw new Error('No WebGL');
 }
+
+const flareCanvas = document.getElementById('flares');
+const ctx = flareCanvas.getContext('2d');
 
 // ── Shaders ──
 
@@ -239,10 +277,122 @@ function resize() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width  = canvas.clientWidth  * dpr;
   canvas.height = canvas.clientHeight * dpr;
+  flareCanvas.width  = canvas.width;
+  flareCanvas.height = canvas.height;
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.uniform4fv(uDimensions, [canvas.width, canvas.height, 0, 0]);
 }
 window.addEventListener('resize', resize);
+
+// ── Lens flare rendering ──
+
+/**
+ * Pure function, general. Compute parallax displacement for a point at a given
+ * depth, matching the Depthy shader's displacement math.
+ *
+ * Args:
+ *   nx (number): Normalized x position [0,1]
+ *   ny (number): Normalized y position [0,1]
+ *   depth (number): Depth value [0,1] (white=1=near in depth map)
+ *   offset (object): {x, y} current eased parallax offset
+ *   scale (number): Displacement scale
+ *   focus (number): Focus depth [0,1]
+ *   aspect (number): Canvas width/height
+ *
+ * Returns:
+ *   {dx, dy}: Pixel displacement to apply
+ *
+ * Examples:
+ *   >>> // At focus depth with no offset, displacement is zero
+ *   >>> computeParallaxShift(0.5, 0.5, 0.5, {x:0,y:0}, 0.04, 0.5, 16/9)
+ *   {dx: 0, dy: 0}
+ */
+function computeParallaxShift(nx, ny, depth, offset, scale, focus, aspect) {
+  const UPSCALE = 1.5;
+  const sx = scale * Math.min(1, 1 / aspect) * UPSCALE;
+  const sy = scale * Math.min(1, aspect) * -UPSCALE;
+
+  // Depth in shader space: inverted, compressed
+  const COMPRESSION = 0.8;
+  const shaderDepth = 1.0 - depth; // shader does 1 - texture.r
+  const depthFactor = shaderDepth - focus;
+
+  const dx = offset.x * depthFactor * sx;
+  const dy = offset.y * depthFactor * sy;
+
+  return { dx, dy };
+}
+
+/**
+ * Command, specific. Draws all lens flares onto the 2D canvas overlay.
+ * Mutates the flare canvas context.
+ */
+function drawFlares(offset) {
+  const w = flareCanvas.width;
+  const h = flareCanvas.height;
+  const aspect = w / h;
+
+  ctx.clearRect(0, 0, w, h);
+
+  for (const light of LIGHTS) {
+    const shift = computeParallaxShift(
+      light.nx, light.ny, light.depth,
+      offset, CONFIG.scale, CONFIG.focus, aspect
+    );
+
+    // Convert normalized image coords to canvas pixels
+    // The image is displayed in "cover" mode via the enlarge uniform
+    const cx = light.nx * w + shift.dx * w;
+    const cy = light.ny * h + shift.dy * h;
+
+    const r = light.radius * (w / 1920); // scale flare size to screen
+    const [lr, lg, lb] = light.color;
+    const intensity = light.intensity;
+
+    // Core glow — soft radial gradient
+    const coreR = r * 0.4;
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+    core.addColorStop(0, `rgba(${lr},${lg},${lb},${intensity})`);
+    core.addColorStop(0.3, `rgba(${lr},${lg},${lb},${intensity * 0.6})`);
+    core.addColorStop(1, `rgba(${lr},${lg},${lb},0)`);
+    ctx.fillStyle = core;
+    ctx.fillRect(cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+
+    // Outer bloom — larger, softer
+    const bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    bloom.addColorStop(0, `rgba(${lr},${lg},${lb},${intensity * 0.35})`);
+    bloom.addColorStop(0.2, `rgba(${lr},${lg},${lb},${intensity * 0.15})`);
+    bloom.addColorStop(1, `rgba(${lr},${lg},${lb},0)`);
+    ctx.fillStyle = bloom;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+
+    // Horizontal streak — anamorphic flare
+    const streakLen = r * 2.5;
+    const streakH = r * 0.12;
+    const streak = ctx.createLinearGradient(cx - streakLen, cy, cx + streakLen, cy);
+    streak.addColorStop(0, `rgba(${lr},${lg},${lb},0)`);
+    streak.addColorStop(0.3, `rgba(${lr},${lg},${lb},${intensity * 0.2})`);
+    streak.addColorStop(0.5, `rgba(${lr},${lg},${lb},${intensity * 0.35})`);
+    streak.addColorStop(0.7, `rgba(${lr},${lg},${lb},${intensity * 0.2})`);
+    streak.addColorStop(1, `rgba(${lr},${lg},${lb},0)`);
+    ctx.fillStyle = streak;
+    ctx.fillRect(cx - streakLen, cy - streakH, streakLen * 2, streakH * 2);
+
+    // Star spikes — 4-point cross
+    ctx.save();
+    ctx.globalAlpha = intensity * 0.25;
+    ctx.strokeStyle = `rgb(${lr},${lg},${lb})`;
+    ctx.lineWidth = 1;
+    const spikeLen = r * 0.8;
+    for (let angle = 0; angle < Math.PI; angle += Math.PI / 4) {
+      ctx.beginPath();
+      ctx.moveTo(cx - Math.cos(angle) * spikeLen, cy - Math.sin(angle) * spikeLen);
+      ctx.lineTo(cx + Math.cos(angle) * spikeLen, cy + Math.sin(angle) * spikeLen);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
 
 // ── Render loop ──
 
@@ -253,6 +403,9 @@ function render() {
 
   gl.uniform2f(uOffset, easedOffset.x, easedOffset.y);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  drawFlares(easedOffset);
+
   requestAnimationFrame(render);
 }
 
