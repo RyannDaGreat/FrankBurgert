@@ -566,14 +566,16 @@ function render() {
 
   // Animate the yellow laser sheen gradient based on mouse position
   if (yellowGradient) {
-    // Sinusoidal pulse left-to-right, 2-second period
+    // Sinusoidal pulse left-to-right, 2-second period, in SVG userSpace coords
+    const SVG_WIDTH = 750;
     const LASER_PERIOD_MS = 2000;
+    const SHEEN_WIDTH = SVG_WIDTH / 6; // wavelength = 1/6 of logo width
     const t = (performance.now() % LASER_PERIOD_MS) / LASER_PERIOD_MS;
-    const pulse = (Math.sin(t * Math.PI * 2) + 1) / 2; // [0,1] smooth oscillation
-    // Sheen sweeps from -30% to 130% so the highlight travels fully across
-    const sheenCenter = pulse * 160 - 30;
-    yellowGradient.setAttribute('x1', (sheenCenter - 40) + '%');
-    yellowGradient.setAttribute('x2', (sheenCenter + 40) + '%');
+    const pulse = (Math.sin(t * Math.PI * 2) + 1) / 2; // [0,1]
+    // Sweep from before the left edge to past the right edge
+    const sheenCenter = pulse * (SVG_WIDTH + SHEEN_WIDTH) - SHEEN_WIDTH / 2;
+    yellowGradient.setAttribute('x1', sheenCenter - SHEEN_WIDTH / 2);
+    yellowGradient.setAttribute('x2', sheenCenter + SHEEN_WIDTH / 2);
   }
 
   requestAnimationFrame(render);
@@ -594,11 +596,12 @@ fetch('Logo.svg')
     const defs = svg.querySelector('defs');
     const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
     grad.id = 'yellow-laser';
-    grad.setAttribute('x1', '0%');
-    grad.setAttribute('y1', '0%');
-    grad.setAttribute('x2', '100%');
-    grad.setAttribute('y2', '0%');
-    grad.setAttribute('gradientUnits', 'objectBoundingBox');
+    // Use userSpaceOnUse so the gradient is global across all yellow paths
+    grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+    grad.setAttribute('x1', '0');
+    grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '750');  // matches SVG viewBox width
+    grad.setAttribute('y2', '0');
 
     // Warm gold -> hot white center -> warm gold
     const stops = [
