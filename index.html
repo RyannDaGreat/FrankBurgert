@@ -136,7 +136,7 @@ const isMobile = window.matchMedia('(max-width: 768px), (hover: none)').matches;
 const CONFIG = {
   colorImage: 'satellite_dishes_photo_superres.jpg',
   depthImage: 'depth.jpg',
-  scale: 0.04,       // "dramatic" = 0.02 * 2.0
+  scale: 0.04 / 3,   // 1/3 of original parallax depth
   focus: 0.5,        // "middle"
   enlarge: 1.06,     // slight zoom to prevent edge bleed
   easeFactor: 0.92,  // mouse smoothing (higher = more lag, smoother)
