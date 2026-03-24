@@ -64,9 +64,6 @@
     <a class="glass-btn" href="tel:+16312208897">
       <span class="iconify" data-icon="mdi:phone-outline"></span> +1 631-220-8897
     </a>
-    <a class="glass-btn" href="https://www.linkedin.com/in/frankburgert" target="_blank" rel="noopener">
-      <span class="iconify" data-icon="mdi:linkedin"></span> LinkedIn
-    </a>
   </div>
 
   <section class="specialties">
@@ -412,17 +409,11 @@ function loadTexture(url, unit) {
 let targetOffset = { x: 0, y: 0 };
 let easedOffset  = { x: 0, y: 0 };
 
-canvas.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) / rect.width  * 2 - 1;
-  const y = (e.clientY - rect.top)  / rect.height * 2 - 1;
+document.addEventListener('mousemove', (e) => {
+  const x = e.clientX / window.innerWidth  * 2 - 1;
+  const y = e.clientY / window.innerHeight * 2 - 1;
   targetOffset.x = -x;
   targetOffset.y = y;
-});
-
-canvas.addEventListener('mouseleave', () => {
-  targetOffset.x = 0;
-  targetOffset.y = 0;
 });
 
 // ── Gyroscope / device orientation for mobile ──
