@@ -12,7 +12,7 @@
 <title>FiberSatCo</title>
 <script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
 <style>
-  :root { --bg: #1a1a1a; --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.12); --glass-hover: rgba(255,255,255,0.10); }
+  :root { --bg: #1a1a1a; --glass: rgba(0,0,0,0.50); --glass-border: rgba(255,255,255,0.12); --glass-hover: rgba(0,0,0,0.50); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; background: var(--bg); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #e8e8e8; }
   body { overflow-x: hidden; overflow-y: auto; }
@@ -28,13 +28,13 @@
   /* Social buttons */
   .social-row { display: flex; gap: 16px; margin-top: 2vh; }
   .glass-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid var(--glass-border); border-radius: 50px; color: #e8e8e8; text-decoration: none; font-size: 0.95rem; transition: background 0.25s, border-color 0.25s, transform 0.2s; cursor: pointer; }
-  .glass-btn:hover { background: var(--glass-hover); border-color: rgba(255,255,255,0.22); transform: translateY(-2px); }
+  .glass-btn:hover { background: var(--glass-hover); border-color: rgba(255,255,255,0.22); }
   .glass-btn .iconify { font-size: 1.2em; }
 
   /* Specialties section */
   .specialties { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; max-width: 900px; width: 90%; margin: 5vh auto 6vh; }
   .glass-panel { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 16px; padding: 28px 30px; transition: background 0.3s, border-color 0.3s; }
-  .glass-panel:hover { background: var(--glass-hover); border-color: rgba(255,255,255,0.2); }
+  .glass-panel:hover { background: var(--glass-hover); }
   .glass-panel h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 14px; color: #ffe066; letter-spacing: 0.02em; }
   .glass-panel ul { list-style: none; padding: 0; }
   .glass-panel li { font-size: 0.88rem; line-height: 1.8; color: rgba(255,255,255,0.78); }
