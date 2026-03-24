@@ -9,54 +9,43 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FiberSatCo — Depth Viewer</title>
+<title>FiberSatCo</title>
+<script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
 <style>
-  :root {
-    --bg: #1a1a1a;
-  }
+  :root { --bg: #1a1a1a; --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.12); --glass-hover: rgba(255,255,255,0.10); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100%; height: 100%;
-    overflow: hidden;
-    background: var(--bg);
-  }
-  canvas {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    cursor: crosshair;
-  }
-  #flares {
-    pointer-events: none;
-  }
-  #logo-wrap {
-    position: absolute;
-    top: 0;
-    left: 25%;
-    width: 50%;
-    pointer-events: none;
-    display: flex;
-    justify-content: center;
-    padding-top: 2vh;
-    z-index: 10;
-  }
-  #logo-wrap svg, #logo-wrap img {
-    width: 100%;
-    height: auto;
-    filter: drop-shadow(0 0 50px rgba(0, 0, 0, 0.5));
-  }
-  /* Mobile fallback: static background image, no WebGL */
-  #mobile-bg {
-    display: none;
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: url('satellite_dishes_photo_superres.jpg') center center / cover no-repeat;
-    z-index: 0;
-  }
+  html, body { width: 100%; height: 100%; background: var(--bg); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #e8e8e8; }
+  body { overflow-x: hidden; overflow-y: auto; }
+  canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; z-index: 0; }
+  #flares { pointer-events: none; z-index: 1; }
+  #logo-wrap { position: relative; width: 50%; margin: 0 auto; pointer-events: none; display: flex; justify-content: center; padding-top: 3vh; z-index: 10; }
+  #logo-wrap svg, #logo-wrap img { width: 100%; height: auto; filter: drop-shadow(0 0 50px rgba(0,0,0,0.5)); }
+  #mobile-bg { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('satellite_dishes_photo_superres.jpg') center center / cover no-repeat; z-index: 0; }
+
+  /* Content overlay */
+  #content { position: relative; z-index: 10; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+  /* Social buttons */
+  .social-row { display: flex; gap: 16px; margin-top: 2vh; }
+  .glass-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid var(--glass-border); border-radius: 50px; color: #e8e8e8; text-decoration: none; font-size: 0.95rem; transition: background 0.25s, border-color 0.25s, transform 0.2s; cursor: pointer; }
+  .glass-btn:hover { background: var(--glass-hover); border-color: rgba(255,255,255,0.22); transform: translateY(-2px); }
+  .glass-btn .iconify { font-size: 1.2em; }
+
+  /* Specialties section */
+  .specialties { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; max-width: 900px; width: 90%; margin: 5vh auto 6vh; }
+  .glass-panel { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 16px; padding: 28px 30px; transition: background 0.3s, border-color 0.3s; }
+  .glass-panel:hover { background: var(--glass-hover); border-color: rgba(255,255,255,0.2); }
+  .glass-panel h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 14px; color: #ffe066; letter-spacing: 0.02em; }
+  .glass-panel ul { list-style: none; padding: 0; }
+  .glass-panel li { font-size: 0.88rem; line-height: 1.8; color: rgba(255,255,255,0.78); }
+  .glass-panel li::before { content: '\2022'; color: rgba(255,224,102,0.5); margin-right: 8px; }
+
   @media (max-width: 768px), (hover: none) {
     canvas { display: none !important; }
     #mobile-bg { display: block; }
+    #logo-wrap { width: 85%; }
+    .specialties { grid-template-columns: 1fr; }
+    .glass-btn { padding: 8px 16px; font-size: 0.85rem; }
   }
 </style>
 </head>
@@ -64,7 +53,78 @@
 <div id="mobile-bg"></div>
 <canvas id="viewer"></canvas>
 <canvas id="flares"></canvas>
-<div id="logo-wrap"></div>
+
+<div id="content">
+  <div id="logo-wrap"></div>
+
+  <div class="social-row">
+    <a class="glass-btn" href="mailto:frank@fibersatco.com">
+      <span class="iconify" data-icon="mdi:email-outline"></span> Email
+    </a>
+    <a class="glass-btn" href="https://www.linkedin.com/in/frankburgert" target="_blank" rel="noopener">
+      <span class="iconify" data-icon="mdi:linkedin"></span> LinkedIn
+    </a>
+  </div>
+
+  <section class="specialties">
+    <div class="glass-panel">
+      <h3>Television Systems Design</h3>
+      <ul>
+        <li>Playout Systems</li>
+        <li>Encoding &amp; Compression</li>
+        <li>Multiplexing</li>
+        <li>Encryption</li>
+        <li>Media Transport</li>
+        <li>Ad Insertion (SCTE104/35)</li>
+        <li>HD-SDI &amp; 2110 Routing</li>
+      </ul>
+    </div>
+    <div class="glass-panel">
+      <h3>Radio Systems Design</h3>
+      <ul>
+        <li>Studio Layouts</li>
+        <li>Analog &amp; Digital Audio</li>
+        <li>Audio over IP</li>
+        <li>Studio to Transmitter Links</li>
+        <li>FM &amp; FM-HD Transmitters</li>
+        <li>High &amp; Low Power Antennas</li>
+        <li>Remote Control Systems</li>
+        <li>Automation Systems</li>
+      </ul>
+    </div>
+    <div class="glass-panel">
+      <h3>Satellite Systems Design</h3>
+      <ul>
+        <li>Antenna Systems</li>
+        <li>SATCOM RF Systems</li>
+        <li>RF Spectrum Analysis</li>
+        <li>RF Waveguide Systems</li>
+        <li>Modulator Configurations</li>
+        <li>RF Over Fiber Interconnects</li>
+        <li>Monitor &amp; Control (M&amp;C)</li>
+        <li>Satellite Uplink Transmission</li>
+        <li>Satellite Downlink Decoding</li>
+      </ul>
+    </div>
+    <div class="glass-panel">
+      <h3>Facility Design Services</h3>
+      <ul>
+        <li>Facility Layout</li>
+        <li>Integration Planning</li>
+        <li>Executive Presentations</li>
+        <li>Equipment Selection</li>
+        <li>Engineering Site Surveys</li>
+        <li>Custom Control Panel Design</li>
+        <li>Detailed CAD Functional Drawings</li>
+        <li>Video, Audio &amp; RF Over IP</li>
+        <li>Fiber Interconnects</li>
+        <li>Redundancy Planning</li>
+        <li>Commissioning &amp; Acceptance Testing</li>
+        <li>Product Recommendations &amp; Development</li>
+      </ul>
+    </div>
+  </section>
+</div>
 
 <script>
 // Copyright (c) 2014 Rafał Lindemann — shader from Depthy (MIT License)
